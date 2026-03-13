@@ -1,3 +1,3 @@
 ﻿  TetrisProject.cpp
-C:\MyProjects\GARIEV\TetrisProject\TetrisProject.cpp(422,15): warning C4244: аргумент: преобразование "time_t" в "unsigned int", возможна потеря данных
-  TetrisProject.vcxproj -> C:\MyProjects\GARIEV\TetrisProject\x64\Debug\TetrisProject.exe
+C:\MyProjects\TetrisProject\TetrisProject.cpp(423,15): warning C4244: аргумент: преобразование "time_t" в "unsigned int", возможна потеря данных
+  TetrisProject.vcxproj -> C:\MyProjects\TetrisProject\x64\Debug\TetrisProject.exe

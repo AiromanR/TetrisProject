@@ -1,4 +1,5 @@
-﻿#include <iostream>
+﻿
+#include <iostream>
 #include <conio.h>
 #include <windows.h>
 
@@ -491,10 +492,9 @@ int main() {
         std::cout << "Очки: " << game.score << "\n\n";
         std::cout << "Ещё раз? (д/н) ";
 
-        char ans;
-        std::cin >> ans;
-        play_again = (ans == 'д' || ans == 'Д' || ans == 'y' || ans == 'Y');
+        int ans = _getwch();
+        play_again = (ans == L'д' || ans == L'Д' || ans == 'y' || ans == 'Y');
+        system("cls");
     }
-
     system("pause");
 }
