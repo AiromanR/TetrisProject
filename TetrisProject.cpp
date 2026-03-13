@@ -1,19 +1,25 @@
-﻿#include <iostream>  
-#include <conio.h>   
-#include <windows.h> 
+﻿#include <iostream>
+#include <conio.h>
+#include <windows.h>
 
-const int WIDTH = 10; // Ширина игрового поля
-const int HEIGHT = 20; // Высота игрового поля
-const int FALL_SPEED = 35; // Скорость автоматического падения ~350мс
+const int WIDTH = 10;
+const int HEIGHT = 20;
 
-const char INSTALLED_CELL = '#'; // Символ для клеток установленных на поле
-const char FALLING_FIGURE_CELL = '@'; // Символ для клеток падающей фигуры
+int FALL_SPEED = 35;//меняется в зависимости от уровня
 
-// Это массив всех тетрамино (7 типов: I, O, T, S, Z, J, L).
-// Каждый тип имеет 4 возможных поворота.
-// Каждая фигура состоит из 4 блоков, каждый блок - координаты [x, y] относительно центра фигуры.
-// Координаты могут быть отрицательными, чтобы центр был в (0,0) для удобства поворотов.
-const int TETRAMINO_SHAPES[7][4][4][2] = {
+const char INSTALLED_CELL = '#';
+const char FALLING_FIGURE_CELL = '@';
+const char SHADOW_CELL = '~';
+
+//цвета
+enum Colors {
+    BLACK = 0, DARKYELLOW = 6, WHITE = 7, BLUE = 9, GREEN = 10, CYAN = 11, RED = 12, MAGENTA = 13, YELLOW = 14
+};
+
+const Colors TETRAMINO_COLORS[7] = { CYAN, YELLOW, MAGENTA, GREEN, RED, BLUE, DARKYELLOW };
+const HANDLE HCONSOLE = GetStdHandle(STD_OUTPUT_HANDLE);
+
+int TETRAMINO_SHAPES[7][4][4][2] = {
     // I
     {{{-1,0},{0,0},{1,0},{2,0}}, {{0,-1},{0,0},{0,1},{0,2}}, {{-1,0},{0,0},{1,0},{2,0}}, {{0,-1},{0,0},{0,1},{0,2}}},
     // O
@@ -30,201 +36,164 @@ const int TETRAMINO_SHAPES[7][4][4][2] = {
     {{{-1,0},{0,0},{1,0},{1,-1}}, {{0,-1},{0,0},{0,1},{1,1}}, {{-1,0},{0,0},{1,0},{-1,1}}, {{0,-1},{0,0},{0,1},{-1,-1}}}
 };
 
-// Структура Cell представляет одну ячейку поля.
-// value - символ в ячейке (' ' - пусто, '#' - установлен блок).
 struct Cell {
     char value = ' ';
-    Cell* prev = nullptr; // Указатель на предыдущую ячейку в строке
-    Cell* next = nullptr; // Указатель на следующую ячейку в строке
+    int color = WHITE;
+    Cell* prev = nullptr;
+    Cell* next = nullptr;
 };
 
-// Структура Row представляет одну строку поля.
-// head и tail - начало и конец списка ячеек (для быстрого доступа).
-// prev и next - указатели для двусвязного списка строк (поле - список строк).
-// filled_count - счётчик непустых ячеек (для проверки, полна ли строка WIDTH ячейками '#').
-// Деструктор ~Row() освобождает память ячеек при удалении строки.
 struct Row {
-    Cell* head = nullptr; // Первая ячейка строки
-    Cell* tail = nullptr; // Последняя ячейка строки
-    Row* prev = nullptr; // Предыдущая строка
-    Row* next = nullptr; // Следующая строка
-    int filled_count = 0; // сколько НЕ пустых ячеек, для удобной проверки на заполненность
+    Cell* head = nullptr;
+    Cell* tail = nullptr;
+    Row* prev = nullptr;
+    Row* next = nullptr;
+    int filled_count = 0;
 
-    ~Row() { // Деструктор
-        Cell* cur = head; // Начинаем с головы
-        while (cur) { // Пока есть ячейки
-            Cell* nxt = cur->next; // Сохраняем следующую
-            delete cur; // Удаляем текущую
-            cur = nxt; // Переходим к следующей
+    ~Row() {
+        Cell* cur = head;
+        while (cur) {
+            Cell* nxt = cur->next;
+            delete cur;
+            cur = nxt;
         }
     }
 };
 
-// top_row и bottom_row - верхняя и нижняя строки поля (двусвязный список).
-// row_count - текущее количество строк (должно быть HEIGHT).
-// needDraw - флаг, что нужно перерисовать поле (оптимизация: рисуем только при изменениях).
-// Вложенная структура Tetramino - текущая падающая фигура.
-// type - 0-6 (индекс в TETRAMINO_SHAPES).
-// rotation - 0-3 (текущий поворот).
-// x, y - позиция центра фигуры (x - горизонталь, y - вертикаль, 0 сверху).
 struct Tetris {
-    Row* top_row = nullptr; // самая верхняя строка (y = 0)
-    Row* bottom_row = nullptr; // самая нижняя
-    int row_count = 0; // Количество строк в поле
-    bool needDraw = false; // Флаг: нужно ли перерисовывать поле
+    Row* top_row = nullptr;
+    Row* bottom_row = nullptr;
+    int row_count = 0;
+    bool needDraw = false;
+    int score = 0;
 
-    // Объект падающей тетраминошки
     struct Tetramino {
-        int type; // 0..6 — индекс в TETRAMINO_SHAPES
-        int rotation = 0; // 0..3 — текущее вращение
-        int x = WIDTH / 2; // центр по горизонтали
-        int y = 0; // позиция по вертикали (0 = сверху)
-    } current; // Текущая фигура
+        int color = WHITE;
+        int type = -1;
+        int rotation = 0;
+        int x = WIDTH / 2;
+        int y = 0;
+    } current, next;
 
-    // Инициализация игры
     void init() {
-        clearField(); // Очищаем поле
-        spawnTetramino(); // Создаём новую фигуру
+        clearField();
+        generateNext();
+        spawnTetramino();
+        generateNext();
     }
 
-    // Очистка поля: удаляем все строки, обнуляем указатели и счётчики.
-    // Затем добавляем HEIGHT пустых строк сверху.
     void clearField() {
-        Row* cur = top_row; // Начинаем с верха
-        while (cur) { // Пока есть строки
-            Row* nxt = cur->next; // Сохраняем следующую
-            delete cur; // Удаляем текущую (деструктор Row освободит ячейки)
-            cur = nxt; // Переходим
+        Row* cur = top_row;
+        while (cur) {
+            Row* nxt = cur->next;
+            delete cur;
+            cur = nxt;
         }
-        top_row = bottom_row = nullptr; // Обнуляем указатели
-        row_count = 0; // Обнуляем счётчик
-        for (int i = 0; i < HEIGHT; ++i) { // Добавляем HEIGHT пустых строк
-            addEmptyRowAtTop(); // Добавляем сверху
+        top_row = bottom_row = nullptr;
+        row_count = 0;
+        score = 0;
+
+        for (int i = 0; i < HEIGHT; ++i) {
+            addEmptyRowAtTop();
         }
     }
 
     Row* createEmptyRow() {
-        Row* row = new Row(); // Новая строка
-        Cell* prev_cell = nullptr; // Предыдущая ячейка для связывания
-        for (int j = 0; j < WIDTH; ++j) { // Для каждой позиции
-            Cell* cell = new Cell(); // Новая ячейка (' ')
-            if (prev_cell) { // Если есть предыдущая
-                prev_cell->next = cell; // Связываем
+        Row* row = new Row();
+        Cell* prev_cell = nullptr;
+        for (int j = 0; j < WIDTH; ++j) {
+            Cell* cell = new Cell();
+            if (prev_cell) {
+                prev_cell->next = cell;
                 cell->prev = prev_cell;
             }
-            else { // Первая ячейка
+            else {
                 row->head = cell;
             }
-            prev_cell = cell; // Обновляем предыдущую
+            prev_cell = cell;
         }
-        row->tail = prev_cell; // Последняя - tail
+        row->tail = prev_cell;
         return row;
     }
 
-    // Добавление пустой строки сверху: создаём строку, связываем с текущим top_row
-    // Если поле пустое, top_row и bottom_row = новой строке
     void addEmptyRowAtTop() {
-        Row* row = createEmptyRow(); // Создаём пустую
-        if (!top_row) { // Если поле пустое
+        Row* row = createEmptyRow();
+        if (!top_row) {
             top_row = bottom_row = row;
         }
-        else { // Иначе вставляем сверху
-            top_row->prev = row; // Текущий top теперь ниже
-            row->next = top_row; // Новая связана с текущим top
-            top_row = row; // Обновляем top
+        else {
+            top_row->prev = row;
+            row->next = top_row;
+            top_row = row;
         }
-        row_count++; // Увеличиваем счётчик
+        row_count++;
     }
 
-    // Спавн новой фигуры: случайный тип 0-6, rotation=0, x=WIDTH/2
-    // y=0 (сверху)
+    void generateNext() {
+        next.type = rand() % 7;
+        next.color = TETRAMINO_COLORS[next.type];
+    }
+
     void spawnTetramino() {
-        current.type = rand() % 7; // Случайный тип
-        current.rotation = 0; // Без поворота
-        current.x = WIDTH / 2; // Центр
-        current.y = 0; // Сверху
+        current.type = next.type;
+        current.color = next.color;
+        current.rotation = 0;
+        current.x = WIDTH / 2;
+        current.y = 0;
     }
 
-    // Получение строки по y (0 - сверху).
-    // Проходим от top_row вниз y раз.
     Row* getRowAt(int y) {
-        if (y < 0 || y >= row_count) return nullptr; // За пределами - nullptr
-        Row* r = top_row; // Начинаем сверху
-        for (int i = 0; i < y; ++i) { // Спускаемся y раз
-            if (!r) return nullptr; // Если конец - ошибка
+        if (y < 0 || y >= row_count) return nullptr;
+        Row* r = top_row;
+        for (int i = 0; i < y; ++i) {
+            if (!r) return nullptr;
             r = r->next;
         }
         return r;
     }
 
-    // Получение ячейки по (y, x): сначала строку, затем от head x раз вправо.
     Cell* getCellAt(int y, int x) {
-        Row* row = getRowAt(y); // Получаем строку
-        if (!row || x < 0 || x >= WIDTH) return nullptr; // За пределами - nullptr
-        Cell* c = row->head; // Начинаем слева
-        for (int j = 0; j < x; ++j) { // Идём x раз вправо
+        Row* row = getRowAt(y);
+        if (!row || x < 0 || x >= WIDTH) return nullptr;
+        Cell* c = row->head;
+        for (int j = 0; j < x; ++j) {
             if (!c) return nullptr;
             c = c->next;
         }
         return c;
     }
 
-    // Проверка, валидна ли позиция фигуры с смещением (dx, dy).
-    // Для каждого из 4 блоков: вычисляем nx, ny = текущая + смещение + относительная координата блока.
-    // Проверяем: nx в [0, WIDTH), ny >=0 и < row_count, ячейка пуста (' ').
-    // Если ny <0 - ок (фигура может торчать сверху при спавне).
     bool isValidPosition(int dx = 0, int dy = 0) {
-        for (int i = 0; i < 4; ++i) { // Для каждого блока
-            int nx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][i][0] + dx; // Новая x
-            int ny = current.y + TETRAMINO_SHAPES[current.type][current.rotation][i][1] + dy; // Новая y
-            if (nx < 0 || nx >= WIDTH) return false; // За горизонтальными границами
-            if (ny < 0) continue; // Торчит сверху - ок
-            Row* row = getRowAt(ny); // Получаем строку
-            if (!row) return false; // Нет строки
-            Cell* cell = getCellAt(ny, nx); // Получаем ячейку
-            if (!cell || cell->value != ' ') return false; // Нет ячейки или занята
+        for (int i = 0; i < 4; ++i) {
+            int nx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][i][0] + dx;
+            int ny = current.y + TETRAMINO_SHAPES[current.type][current.rotation][i][1] + dy;
+            
+            if (nx < 0 || nx >= WIDTH) return false;
+            if (ny < 0) continue;
+            
+            Row* row = getRowAt(ny);
+            if (!row) return false;
+            
+            Cell* cell = getCellAt(ny, nx);
+            if (!cell || cell->value != ' ') return false;
         }
-        return true; // Всё ок
+        return true;
     }
 
-    // Поворот фигуры: увеличиваем rotation %4.
-    // Проверяем валидность новой позиции; если нет - откатываем.
-    // Если да - ставим needDraw = true (нужно перерисовать).
     void rotate() {
-        int oldRotation = current.rotation; // Сохраняем старый
-        current.rotation = (current.rotation + 1) % 4; // Новый
-        if (isValidPosition()) { // Проверяем
-            needDraw = true; // Ок - рисуем
-        }
-        else current.rotation = oldRotation; // Откат
+        int oldRotation = current.rotation;
+        current.rotation = (current.rotation + 1) % 4;
+        if 
+            (isValidPosition()) needDraw = true;
+        else 
+            current.rotation = oldRotation;
         
     }
 
-    // Движение влево: проверяем позицию с dx=-1, если ок - current.x--, needDraw=true.
-    void moveLeft() {
-        if (isValidPosition(-1, 0)) {
-            current.x--;
-            needDraw = true;
-        }
-    }
+    void moveLeft() { if (isValidPosition(-1, 0)) { current.x--; needDraw = true; } }
+    void moveRight() { if (isValidPosition(1, 0)) { current.x++; needDraw = true; } }
+    void dropSoft() { if (isValidPosition(0, 1)) { current.y++; needDraw = true; } }
 
-    // Аналогично вправо: dx=1.
-    void moveRight() {
-        if (isValidPosition(1, 0)) {
-            current.x++;
-            needDraw = true;
-        }
-    }
-
-    // Мягкое падение: dy=1, если ок - current.y++, needDraw=true.
-    void dropSoft() {
-        if (isValidPosition(0, 1)) {
-            current.y++;
-            needDraw = true;
-        }
-    }
-
-    // Жёсткое падение: пока возможно dy=1, спускаем вниз (до упора).
     void dropHard() {
         while (isValidPosition(0, 1)) {
             current.y++;
@@ -232,90 +201,147 @@ struct Tetris {
         }
     }
 
-    // Слияние фигуры с полем: для каждого блока вычисляем (nx, ny), если ny>=0 - ставим '#' в ячейку, увеличиваем filled_count строки.
-    // Затем очищаем полные строки.
+    int getShadowY() {
+        int shadowY = current.y;
+        while (true) {
+            bool canGoDown = isValidPosition(0, shadowY - current.y + 1);
+            if (!canGoDown) break;
+            shadowY++;
+        }
+        return shadowY;
+    }
+
     void mergeToField() {
-        for (int i = 0; i < 4; ++i) { // Для каждого блока
+        for (int i = 0; i < 4; ++i) {
             int nx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][i][0];
             int ny = current.y + TETRAMINO_SHAPES[current.type][current.rotation][i][1];
-            if (ny < 0) continue; // Торчит сверху - игнор
-            Cell* cell = getCellAt(ny, nx); // Ячейка
+            if (ny < 0) continue;
+
+            Cell* cell = getCellAt(ny, nx);
             if (cell) {
-                cell->value = INSTALLED_CELL; // '#'
-                Row* r = getRowAt(ny); // Строка
-                if (r) r->filled_count++; // Увеличиваем счётчик
+                cell->value = INSTALLED_CELL;
+                cell->color = current.color;
+                Row* r = getRowAt(ny);
+                if (r) r->filled_count++;
             }
         }
     }
 
-    // Очистка полных строк: идём от bottom_row вверх (prev).
-    // Если filled_count == WIDTH - удаляем строку: перестраиваем указатели prev/next, обновляем top/bottom если нужно.
-    // Уменьшаем row_count, добавляем пустую строку сверху.
     void clearFullRows() {
-        Row* r = bottom_row; // Начинаем снизу
+        int cleared = 0;
+        Row* r = bottom_row;
         while (r) {
-            Row* prev = r->prev; // Сохраняем prev (идём вверх)
-            if (r->filled_count == WIDTH) { // Полная?
-                if (r->prev) r->prev->next = r->next; // Связываем prev с next
-                if (r->next) r->next->prev = r->prev; // И next с prev
-                if (r == top_row) top_row = r->next; // Если top - новый top = next
-                if (r == bottom_row) bottom_row = r->prev; // Если bottom - новый bottom = prev
-                delete r; // Удаляем (деструктор освободит ячейки)
-                row_count--; // Уменьшаем
-                addEmptyRowAtTop(); // Добавляем пустую сверху (сдвиг вниз)
+            Row* prev = r->prev;
+            if (r->filled_count == WIDTH) {
+                if (r->prev) r->prev->next = r->next;
+                if (r->next) r->next->prev = r->prev;
+                if (r == top_row) top_row = r->next;
+                if (r == bottom_row) bottom_row = r->prev;
+
+                delete r;
+                row_count--;
+                addEmptyRowAtTop();
+                cleared++;
             }
-            r = prev; // Переходим вверх
+            r = prev;
+        }
+        if (cleared > 0) {
+            switch (cleared) {
+            case 1: score += 100; break;
+            case 2: score += 250; break;
+            case 3: score += 500; break;
+            case 4: score += 1000; break;
+            }
         }
     }
 
-    // Проверка конца игры: если новая фигура в позиции (0,0) не валидна - переполнение.
-    bool isGameOver() {
-        return !isValidPosition(0, 0);
-    }
+    bool isGameOver() { return !isValidPosition(0, 0);}
 
-    // Отрисовка поля: очищаем экран (system("cls")).
-    // Рисуем рамку сверху "+----------+".
-    // Затем для каждой строки (до HEIGHT): "|", затем для каждой ячейки - её value или '@' если это блок падающей фигуры.
-    // Проверяем для каждого (j, displayed) совпадение с блоками current.
-    // Если строк меньше HEIGHT - добиваем пустыми "|          |".
-    // Рамка снизу.
     void draw() {
-        system("cls"); // Очистка экрана
-        std::cout << "+----------+\n"; // Верх рамки
-        Row* row = top_row; // Начинаем сверху
-        int displayed = 0; // Счётчик отображаемых строк
-        while (row && displayed < HEIGHT) { // Пока есть строки и не до HEIGHT
-            std::cout << "|"; // Левая рамка
-            Cell* cell = row->head; // Ячейки строки
-            for (int j = 0; j < WIDTH; ++j) { // Для каждой позиции
-                char ch; // По умолчанию пусто
-                if (cell) { // Если ячейка есть
-                    ch = cell->value; // Её значение
-                    cell = cell->next; // Следующая
+        system("cls");
+        std::cout << "+----------+ Следующая:\n";
+
+        Row* row = top_row;
+        int disp = 0;
+
+        while (row && disp < HEIGHT) {
+            std::cout << "|";
+            Cell* c = row->head;
+            for (int j = 0; j < WIDTH; ++j) {
+                char ch = ' ';
+                int col = WHITE;
+
+                if (c) {
+                    ch = c->value;
+                    col = c->color;
+                    c = c->next;
                 }
-                // Отрисовка падающей тетрамино: проверяем, совпадает ли (j, displayed) с каким-то блоком
-                for (int k = 0; k < 4; ++k) { // Для каждого блока фигуры
+
+                // текущая фигура
+                for (int k = 0; k < 4; ++k) {
                     int fx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][k][0];
                     int fy = current.y + TETRAMINO_SHAPES[current.type][current.rotation][k][1];
-                    if (fy == displayed && fx == j && fy >= 0) { // Совпадение и не сверху
-                        ch = FALLING_FIGURE_CELL; // '@'
+                    if (fy == disp && fx == j && fy >= 0) {
+                        ch = FALLING_FIGURE_CELL;
+                        col = current.color;
                         break;
                     }
                 }
-                std::cout << ch; // Выводим
+
+                // тень
+                int shadowY = getShadowY();
+                if (ch == ' ' && disp == shadowY && shadowY > current.y) {
+                    for (int k = 0; k < 4; ++k) {
+                        int fx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][k][0];
+                        if (fx == j) {
+                            ch = SHADOW_CELL;
+                            col = current.color;
+                            break;
+                        }
+                    }
+                }
+
+                SetConsoleTextAttribute(HCONSOLE, col);
+                std::cout << ch;
             }
-            std::cout << "|\n"; // Правая рамка и новая строка
-            row = row->next; // Следующая строка
-            displayed++;
+            SetConsoleTextAttribute(HCONSOLE, WHITE);
+            std::cout << "|";
+
+            // следующая фигура (справа, только первые 4 строки)
+            if (disp < 4) {
+                std::cout << "   ";
+                for (int j = 0; j < 4; ++j) {
+                    char ch = ' ';
+                    int col = WHITE;
+                    for (int k = 0; k < 4; ++k) {
+                        int fx = 1 + TETRAMINO_SHAPES[next.type][0][k][0];
+                        int fy = 2 + TETRAMINO_SHAPES[next.type][0][k][1];
+                        if (fx == j && fy == disp) {
+                            ch = FALLING_FIGURE_CELL;
+                            col = next.color;
+                            break;
+                        }
+                    }
+                    SetConsoleTextAttribute(HCONSOLE, col);
+                    std::cout << ch;
+                    SetConsoleTextAttribute(HCONSOLE, WHITE);
+                }
+            }
+            std::cout << "\n";
+            row = row->next;
+            disp++;
         }
-        while (displayed < HEIGHT) { // Если меньше HEIGHT - пустые строки
-            std::cout << "|          |\n"; // Пустая
-            displayed++;
+
+        while (disp < HEIGHT) {
+            std::cout << "|          |\n";
+            disp++;
         }
-        std::cout << "+----------+\n"; // Низ рамки
+
+        SetConsoleTextAttribute(HCONSOLE, WHITE);
+        std::cout << "+----------+\n";
+        std::cout << "Очки: " << score << "\n";
     }
 
-    // Деструктор Tetris: удаляем все строки (деструкторы Row освободят ячейки).
     ~Tetris() {
         Row* cur = top_row;
         while (cur) {
@@ -330,47 +356,76 @@ int main() {
     srand(time(NULL));
     setlocale(LC_ALL, "Russian");
 
-    Tetris game; 
-    game.init();
+    bool play_again = true;
+    while (play_again) {
+        std::cout << "Тетрис\n";
+        std::cout << "1 = Новичок\n";
+        std::cout << "2 = Средний\n";
+        std::cout << "3 = Профи\n> ";
 
-    int counterForDisplay = 0; 
-
-    while (true) {
-        while (_kbhit()) {
-            switch (_getwch()) {
-                case 'a': case 'A': case L'ф': case L'Ф': game.moveLeft();  break; // Влево
-                case 'd': case 'D': case L'в': case L'В': game.moveRight(); break; // Вправо
-                case 'w': case 'W': case L'ц': case L'Ц': game.rotate();    break; // Поворот
-                case ' ':                                 game.dropHard();  break; // Жёсткое падение (пробел)
-                case 's': case 'S': case L'ы': case L'Ы': game.dropSoft();  break; // Мягкое (вниз)
-            }
+        int lvl;
+        std::cin >> lvl;
+        switch (lvl) {
+            case 1: FALL_SPEED = 50; break;
+            case 2: FALL_SPEED = 35; break;
+            case 3: FALL_SPEED = 18; break;
+            default: FALL_SPEED = 35;
         }
 
-        // Автоматическое падение
-        if (counterForDisplay == FALL_SPEED) {
-            counterForDisplay = 0;
+        Tetris game;
+        game.init();
 
-            game.draw();
-            if (game.isValidPosition(0, 1)) {
-                game.dropSoft();
-            }
-            else {
-                game.mergeToField(); // Сливаем с полем
-                game.clearFullRows(); // Отчищаем строки
-                game.spawnTetramino(); // Новая фигура
-                if (game.isGameOver()) { // Переполнение?
-                    break;
+        int counter = 0;
+        bool game_over = false;
+
+        while (!game_over) {
+            while (_kbhit()) {
+                switch (_getwch()) {
+                case 'a': case 'A': case L'ф': case L'Ф': game.moveLeft();  break;
+                case 'd': case 'D': case L'в': case L'В': game.moveRight(); break;
+                case 'w': case 'W': case L'ц': case L'Ц': game.rotate();    break;
+                case 's': case 'S': case L'ы': case L'Ы': game.dropSoft();  break;
+                case ' ':                                 game.dropHard();  break;
                 }
             }
-        } else counterForDisplay++;
 
-        if (game.needDraw) { // Если было движение - рисуем
-            game.draw();
-            game.needDraw = false;
+            counter++;
+            if (counter >= FALL_SPEED) {
+                counter = 0;
+                if (game.isValidPosition(0, 1)) {
+                    game.dropSoft();
+                }
+                else {
+                    game.mergeToField();
+                    game.clearFullRows();
+                    game.spawnTetramino();
+                    game.generateNext();
+                    if (game.isGameOver()) {
+                        game_over = true;
+                    }
+                }
+                game.needDraw = true;
+            }
+
+            if (game.needDraw) {
+                game.draw();
+                game.needDraw = false;
+            }
+
+            Sleep(10);
         }
-        Sleep(10); // Пауза 10ms
+
+        system("cls");
+        SetConsoleTextAttribute(HCONSOLE, RED);
+        std::cout << "ИГРА ОКОНЧЕНА\n";
+        SetConsoleTextAttribute(HCONSOLE, WHITE);
+        std::cout << "Очки: " << game.score << "\n\n";
+        std::cout << "Ещё раз? (д/н) ";
+
+        char ans;
+        std::cin >> ans;
+        play_again = (ans == 'д' || ans == 'Д' || ans == 'y' || ans == 'Y');
     }
-    system("cls");
-    std::cout << "ИГРА ОКОНЧЕНА\n";
+
     system("pause");
 }
