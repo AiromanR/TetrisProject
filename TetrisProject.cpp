@@ -53,7 +53,7 @@ struct Row {
     Cell* tail = nullptr;
     Row* prev = nullptr;
     Row* next = nullptr;
-    int filled_count = 0; // сколько НЕ пустых ячеек, для удобной проверки на заполненность
+    int filled_count = 0; //сколько НЕ пустых ячеек, для удобной проверки на заполненность
 
     ~Row() {
         Cell* cur = head;
@@ -72,13 +72,13 @@ struct Tetris {
     bool needDraw = false;      //флаг необходимости перерисовки
     int score = 0;              //очки
 
-    //фигура тетрамино - во время игры существует 2 штуки: текущая и седующая
+    //фигура тетрамино - во время игры существует 2 штуки: текущая и следующая
     struct Tetramino {
         int color = WHITE;
-        int type = -1;     // 0..6 — индекс в TETRAMINO_SHAPES
-        int rotation = 0;  // 0..3 — текущее вращение
-        int x = WIDTH / 2; // центр по горизонтали
-        int y = 0;         // позиция по вертикали (0 = сверху)
+        int type = -1;     //0..6 — индекс в TETRAMINO_SHAPES
+        int rotation = 0;  //0..3 — текущее вращение
+        int x = WIDTH / 2; //центр по горизонтали
+        int y = 0;         //позиция по вертикали (0 = сверху)
     } current, next;
 
     //инициализация игры
@@ -92,6 +92,7 @@ struct Tetris {
     //очистка поля
     void clearField() {
         Row* cur = top_row;
+
         //удаление всех строк
         while (cur) {
             Row* nxt = cur->next;
@@ -179,7 +180,7 @@ struct Tetris {
         return c;
     }
 
-    // проверка на возможность фигуры находиться на координатах
+    //проверка на возможность фигуры находиться на координатах
     bool isValidPosition(int dx = 0, int dy = 0) {
         //смотрим каждый из 4 блоков фигуры
         for (int i = 0; i < 4; ++i) {
@@ -208,7 +209,6 @@ struct Tetris {
             needDraw = true;
         else
             current.rotation = oldRotation;
-
     }
 
     //движение фигуры
@@ -288,7 +288,7 @@ struct Tetris {
         Row* r = bottom_row;    //идем снизу вверх
         while (r) {
             Row* prev = r->prev;
-            //если строка заполнена - удаляем и дабавляем новую
+            //если строка заполнена - удаляем и добавляем новую
             if (r->filled_count == WIDTH) {
                 if (r->prev) r->prev->next = r->next;
                 if (r->next) r->next->prev = r->prev;
@@ -302,6 +302,7 @@ struct Tetris {
             }
             r = prev;
         }
+
         //начисление очков в зависимости от количества сбитых строк
         if (cleared > 0) {
             switch (cleared) {
@@ -314,7 +315,9 @@ struct Tetris {
     }
 
     //окончание игры
-    bool isGameOver() { return !isValidPosition(0, 0); }
+    bool isGameOver() { 
+        return !isValidPosition(0, 0); 
+    }
 
     //отрисовка
     void draw() {
@@ -337,7 +340,7 @@ struct Tetris {
                     c = c->next;
                 }
 
-                // текущая фигура
+                //текущая фигура
                 for (int k = 0; k < 4; ++k) {
                     int fx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][k][0];
                     int fy = current.y + TETRAMINO_SHAPES[current.type][current.rotation][k][1];
@@ -348,7 +351,7 @@ struct Tetris {
                     }
                 }
 
-                // тень
+                //тень
                 static int shadowY = -1;
                 if (disp == 0) shadowY = getShadowY();
 
@@ -369,12 +372,13 @@ struct Tetris {
             SetConsoleTextAttribute(HCONSOLE, WHITE);
             std::cout << "|";
 
-            // следующая фигура (справа, только первые 4 строки)
-            if (disp < 4) {
+            //пок следующей фигуры (справа от игрового поля, требуется только первые 3 строки)
+            if (disp < 3) {
                 std::cout << "   ";
                 for (int j = 0; j < 4; ++j) {
                     char ch = ' ';
                     int col = WHITE;
+
                     for (int k = 0; k < 4; ++k) {
                         int fx = 1 + TETRAMINO_SHAPES[next.type][0][k][0];
                         int fy = 2 + TETRAMINO_SHAPES[next.type][0][k][1];
@@ -428,10 +432,10 @@ int main() {
         int lvl;
         std::cin >> lvl;
         switch (lvl) {
-        case 1: FALL_SPEED = 50; break;
-        case 2: FALL_SPEED = 35; break;
-        case 3: FALL_SPEED = 18; break;
-        default: FALL_SPEED = 35;
+            case 1: FALL_SPEED = 50; break;
+            case 2: FALL_SPEED = 35; break;
+            case 3: FALL_SPEED = 18; break;
+            default: FALL_SPEED = 35;
         }
 
         Tetris game;
@@ -441,7 +445,7 @@ int main() {
         bool game_over = false;
 
         while (!game_over) {
-            //управление
+            //управление с учётом русской раскладки
             while (_kbhit()) {
                 switch (_getwch()) {
                 case 'a': case 'A': case L'ф': case L'Ф': game.moveLeft();  break;
