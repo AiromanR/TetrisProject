@@ -2,11 +2,13 @@
 #include <conio.h>
 #include <windows.h>
 
+//поле
 const int WIDTH = 10;
 const int HEIGHT = 20;
 
 int FALL_SPEED = 35;//меняется в зависимости от уровня
 
+//символы
 const char INSTALLED_CELL = '#';
 const char FALLING_FIGURE_CELL = '@';
 const char SHADOW_CELL = '~';
@@ -19,6 +21,7 @@ enum Colors {
 const Colors TETRAMINO_COLORS[7] = { CYAN, YELLOW, MAGENTA, GREEN, RED, BLUE, DARKYELLOW };
 const HANDLE HCONSOLE = GetStdHandle(STD_OUTPUT_HANDLE);
 
+// Массив фигур (7 типов фигур, каждая с 4 поворотами, каждая фигура состоит из 4 блоков с координатами [x, y] относительно центра)
 int TETRAMINO_SHAPES[7][4][4][2] = {
     // I
     {{{-1,0},{0,0},{1,0},{2,0}}, {{0,-1},{0,0},{0,1},{0,2}}, {{-1,0},{0,0},{1,0},{2,0}}, {{0,-1},{0,0},{0,1},{0,2}}},
@@ -36,6 +39,7 @@ int TETRAMINO_SHAPES[7][4][4][2] = {
     {{{-1,0},{0,0},{1,0},{1,-1}}, {{0,-1},{0,0},{0,1},{1,1}}, {{-1,0},{0,0},{1,0},{-1,1}}, {{0,-1},{0,0},{0,1},{-1,-1}}}
 };
 
+//ячейка - двусвязный список
 struct Cell {
     char value = ' ';
     int color = WHITE;
@@ -43,12 +47,13 @@ struct Cell {
     Cell* next = nullptr;
 };
 
+//строка - двусвязный список 
 struct Row {
     Cell* head = nullptr;
     Cell* tail = nullptr;
     Row* prev = nullptr;
     Row* next = nullptr;
-    int filled_count = 0;
+    int filled_count = 0; // сколько НЕ пустых ячеек, для удобной проверки на заполненность
 
     ~Row() {
         Cell* cur = head;
@@ -63,27 +68,31 @@ struct Row {
 struct Tetris {
     Row* top_row = nullptr;
     Row* bottom_row = nullptr;
-    int row_count = 0;
-    bool needDraw = false;
-    int score = 0;
+    int row_count = 0;          //количество строк
+    bool needDraw = false;      //флаг необходимости перерисовки
+    int score = 0;              //очки
 
+    //фигура тетрамино - во время игры существует 2 штуки: текущая и седующая
     struct Tetramino {
         int color = WHITE;
-        int type = -1;
-        int rotation = 0;
-        int x = WIDTH / 2;
-        int y = 0;
+        int type = -1;     // 0..6 — индекс в TETRAMINO_SHAPES
+        int rotation = 0;  // 0..3 — текущее вращение
+        int x = WIDTH / 2; // центр по горизонтали
+        int y = 0;         // позиция по вертикали (0 = сверху)
     } current, next;
 
+    //инициализация игры
     void init() {
-        clearField();
-        generateNext();
-        spawnTetramino();
-        generateNext();
+        clearField();       //очистка поля
+        generateNext();     //генерация следующей фигуры
+        spawnTetramino();   //она становится текущей
+        generateNext();     //генерация новой следующей
     }
 
+    //очистка поля
     void clearField() {
         Row* cur = top_row;
+        //удаление всех строк
         while (cur) {
             Row* nxt = cur->next;
             delete cur;
@@ -93,11 +102,13 @@ struct Tetris {
         row_count = 0;
         score = 0;
 
+        //добавление HEIGHT пустых строк
         for (int i = 0; i < HEIGHT; ++i) {
             addEmptyRowAtTop();
         }
     }
 
+    //создать пустую строку
     Row* createEmptyRow() {
         Row* row = new Row();
         Cell* prev_cell = nullptr;
@@ -116,6 +127,7 @@ struct Tetris {
         return row;
     }
 
+    //добавить пустую строку вверх
     void addEmptyRowAtTop() {
         Row* row = createEmptyRow();
         if (!top_row) {
@@ -129,11 +141,13 @@ struct Tetris {
         row_count++;
     }
 
+    //генерация следующей тетрамино
     void generateNext() {
         next.type = rand() % 7;
         next.color = TETRAMINO_COLORS[next.type];
     }
 
+    //спавн падающей тетрамино
     void spawnTetramino() {
         current.type = next.type;
         current.color = next.color;
@@ -142,6 +156,7 @@ struct Tetris {
         current.y = 0;
     }
 
+    //получить строку по игрику (0 = верх)
     Row* getRowAt(int y) {
         if (y < 0 || y >= row_count) return nullptr;
         Row* r = top_row;
@@ -152,6 +167,7 @@ struct Tetris {
         return r;
     }
 
+    //получить ячейку по координатам
     Cell* getCellAt(int y, int x) {
         Row* row = getRowAt(y);
         if (!row || x < 0 || x >= WIDTH) return nullptr;
@@ -163,33 +179,39 @@ struct Tetris {
         return c;
     }
 
+    // проверка на возможность фигуры находиться на координатах
     bool isValidPosition(int dx = 0, int dy = 0) {
+        //смотрим каждый из 4 блоков фигуры
         for (int i = 0; i < 4; ++i) {
             int nx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][i][0] + dx;
             int ny = current.y + TETRAMINO_SHAPES[current.type][current.rotation][i][1] + dy;
-            
+
+            //проверка границ поля
             if (nx < 0 || nx >= WIDTH) return false;
-            if (ny < 0) continue;
-            
+            if (ny < 0) continue;   //выше поля игнорируем
+
             Row* row = getRowAt(ny);
-            if (!row) return false;
-            
+            if (!row) return false;     //выход за границы
+
+            //проверка столкновения с упавшими фигурами
             Cell* cell = getCellAt(ny, nx);
-            if (!cell || cell->value != ' ') return false;
+            if (!cell || cell->value != ' ') return false;  //клетка занята
         }
         return true;
     }
 
+    //вращение фигуры
     void rotate() {
         int oldRotation = current.rotation;
         current.rotation = (current.rotation + 1) % 4;
-        if 
-            (isValidPosition()) needDraw = true;
-        else 
+        if (isValidPosition())
+            needDraw = true;
+        else
             current.rotation = oldRotation;
-        
+
     }
 
+    //движение фигуры
     void moveLeft() { if (isValidPosition(-1, 0)) { current.x--; needDraw = true; } }
     void moveRight() { if (isValidPosition(1, 0)) { current.x++; needDraw = true; } }
     void dropSoft() { if (isValidPosition(0, 1)) { current.y++; needDraw = true; } }
@@ -201,16 +223,49 @@ struct Tetris {
         }
     }
 
+    //получить тень фигуры
     int getShadowY() {
         int shadowY = current.y;
+
+        //смещение самого нижнего блока
+        int maxOffset = -10;
+        for (int k = 0; k < 4; ++k) {
+            int offset = TETRAMINO_SHAPES[current.type][current.rotation][k][1];
+            if (offset > maxOffset) maxOffset = offset;
+        }
+
+        //пока можем опуститься так, чтобы нижний блок не врезался
         while (true) {
-            bool canGoDown = isValidPosition(0, shadowY - current.y + 1);
+            bool canGoDown = true;
+
+            for (int k = 0; k < 4; ++k) {
+                int nx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][k][0];
+                //клетка, где будет блок после спуска
+                int ny = shadowY + TETRAMINO_SHAPES[current.type][current.rotation][k][1] - maxOffset + 1;
+
+                //уперлись в самый низ
+                if (ny >= row_count) {
+                    canGoDown = false;
+                    break;
+                }
+                if (ny < 0) continue;
+
+                Cell* cell = getCellAt(ny, nx);
+                //уперлись в фигуру на поле
+                if (cell && cell->value != ' ') {
+                    canGoDown = false;
+                    break;
+                }
+            }
+
             if (!canGoDown) break;
             shadowY++;
         }
+
         return shadowY;
     }
 
+    //закрепление фигуры на поле
     void mergeToField() {
         for (int i = 0; i < 4; ++i) {
             int nx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][i][0];
@@ -227,11 +282,13 @@ struct Tetris {
         }
     }
 
+    //удаление заполненных строк
     void clearFullRows() {
         int cleared = 0;
-        Row* r = bottom_row;
+        Row* r = bottom_row;    //идем снизу вверх
         while (r) {
             Row* prev = r->prev;
+            //если строка заполнена - удаляем и дабавляем новую
             if (r->filled_count == WIDTH) {
                 if (r->prev) r->prev->next = r->next;
                 if (r->next) r->next->prev = r->prev;
@@ -245,6 +302,7 @@ struct Tetris {
             }
             r = prev;
         }
+        //начисление очков в зависимости от количества сбитых строк
         if (cleared > 0) {
             switch (cleared) {
             case 1: score += 100; break;
@@ -255,14 +313,16 @@ struct Tetris {
         }
     }
 
-    bool isGameOver() { return !isValidPosition(0, 0);}
+    //окончание игры
+    bool isGameOver() { return !isValidPosition(0, 0); }
 
+    //отрисовка
     void draw() {
         system("cls");
         std::cout << "+----------+ Следующая:\n";
 
         Row* row = top_row;
-        int disp = 0;
+        int disp = 0;   //текущая отображаемая строка
 
         while (row && disp < HEIGHT) {
             std::cout << "|";
@@ -289,7 +349,9 @@ struct Tetris {
                 }
 
                 // тень
-                int shadowY = getShadowY();
+                static int shadowY = -1;
+                if (disp == 0) shadowY = getShadowY();
+
                 if (ch == ' ' && disp == shadowY && shadowY > current.y) {
                     for (int k = 0; k < 4; ++k) {
                         int fx = current.x + TETRAMINO_SHAPES[current.type][current.rotation][k][0];
@@ -366,19 +428,20 @@ int main() {
         int lvl;
         std::cin >> lvl;
         switch (lvl) {
-            case 1: FALL_SPEED = 50; break;
-            case 2: FALL_SPEED = 35; break;
-            case 3: FALL_SPEED = 18; break;
-            default: FALL_SPEED = 35;
+        case 1: FALL_SPEED = 50; break;
+        case 2: FALL_SPEED = 35; break;
+        case 3: FALL_SPEED = 18; break;
+        default: FALL_SPEED = 35;
         }
 
         Tetris game;
         game.init();
 
-        int counter = 0;
+        int counter = 0;    //счетчик скорости падения
         bool game_over = false;
 
         while (!game_over) {
+            //управление
             while (_kbhit()) {
                 switch (_getwch()) {
                 case 'a': case 'A': case L'ф': case L'Ф': game.moveLeft();  break;
@@ -392,10 +455,12 @@ int main() {
             counter++;
             if (counter >= FALL_SPEED) {
                 counter = 0;
+                //если фигура может упасть - падает
                 if (game.isValidPosition(0, 1)) {
                     game.dropSoft();
                 }
                 else {
+                    //фигура упала
                     game.mergeToField();
                     game.clearFullRows();
                     game.spawnTetramino();
